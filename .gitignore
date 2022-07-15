@@ -14,3 +14,4 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 data/gitlab-data-*.json
+team-members/teams-data-*.json

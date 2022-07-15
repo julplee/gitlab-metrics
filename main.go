@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -81,35 +83,43 @@ func main() {
 	var analyzedMergeRequestsByTeam map[string]map[int][]AnalyzedMergeRequest
 	analyzedMergeRequestsByTeam = make(map[string]map[int][]AnalyzedMergeRequest)
 
-	// if we os.Open returns an error then handle it
-	membersTeam := ReadTeamsDataJson(analyzedMergeRequestsByTeam)
-
 	var mergeRequestsData JsonMergeRequestsData
 
-	f, err := os.Open("./data")
-	if err != nil {
-		fmt.Println(err)
+	gitLabDataFiles, shouldReturn := readFiles("./data")
+	if shouldReturn {
 		return
 	}
 
-	files, err := f.Readdir(0)
-	if err != nil {
-		fmt.Println(err)
+	gitLabTeamMembersFiles, shouldReturn := readFiles("./team-members")
+	if shouldReturn {
 		return
 	}
 
-	for _, v := range files {
+	var membersTeam map[string]string
+
+	keys := make([]string, 0, len(gitLabDataFiles))
+	for k := range gitLabDataFiles {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		v := gitLabDataFiles[k]
 		if v.IsDir() {
 			continue
 		}
 
-		// Open our jsonMergeRequests
+		index := GetFileIndex(v.Name())
+		if gitLabTeamMembersFiles[index] != nil {
+			membersTeam = ReadTeamsDataJson(gitLabTeamMembersFiles[index].Name(), analyzedMergeRequestsByTeam)
+		}
+
 		jsonMergeRequests, err := os.Open("./data/" + v.Name())
-		// if we os.Open returns an error then handle it
+
 		if err != nil {
 			fmt.Println(err)
 		}
-		fmt.Println("Successfully Opened JSON file")
+		fmt.Println("Successfully Opened JSON file " + v.Name())
 
 		byteValue, _ := ioutil.ReadAll(jsonMergeRequests)
 		json.Unmarshal(byteValue, &mergeRequestsData)
@@ -191,18 +201,52 @@ func main() {
 		defer jsonMergeRequests.Close()
 	}
 
-	defer f.Close()
 }
 
-func ReadTeamsDataJson(analyzedMergeRequestsByTeam map[string]map[int][]AnalyzedMergeRequest) map[string]string {
+func readFiles(filePath string) (map[string]fs.FileInfo, bool) {
+	dataDir, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println(err)
+		return nil, true
+	}
+
+	dataFiles, err := dataDir.Readdir(0)
+	if err != nil {
+		fmt.Println(err)
+		return nil, true
+	}
+
+	defer dataDir.Close()
+
+	files := make(map[string]fs.FileInfo)
+	for _, v := range dataFiles {
+		if v.Name() == "README.md" {
+			continue
+		}
+
+		index := GetFileIndex(v.Name())
+
+		files[index] = v
+	}
+
+	return files, false
+}
+
+func GetFileIndex(fileName string) string {
+	length := len(fileName)
+
+	return fileName[length-7 : length-5]
+}
+
+func ReadTeamsDataJson(gitLabTeamMembersFileName string, analyzedMergeRequestsByTeam map[string]map[int][]AnalyzedMergeRequest) map[string]string {
 	var teamsData JsonTeamsData
 
-	jsonTeams, err := os.Open("../teams-data.json")
+	jsonTeams, err := os.Open("./team-members/" + gitLabTeamMembersFileName)
 
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println("Successfully Opened JSON file")
+	fmt.Println("Successfully Opened JSON file " + gitLabTeamMembersFileName)
 
 	bytesValue, _ := ioutil.ReadAll(jsonTeams)
 	json.Unmarshal(bytesValue, &teamsData)
